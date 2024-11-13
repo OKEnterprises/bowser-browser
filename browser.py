@@ -1,7 +1,6 @@
 import socket
 import ssl
 import tkinter
-from tkinter import ttk
 from datetime import datetime, timedelta
 
 type Cache = dict[str, tuple[str, datetime]]
@@ -115,24 +114,21 @@ class Browser:
         self.canvas = tkinter.Canvas(
             self.window,
             width=self.width,
-            height=self.height
+            height=self.height,
+            scrollregion=(0, 0, self.width, self.height)
         )
-        self.v_scrollbar = ttk.Scrollbar(
+        self.v_scrollbar = tkinter.Scrollbar(
             self.window,
-            orient="vertical",
             command=self.canvas.yview
         )
-        self.canvas.configure(
-            scrollregion=self.canvas.bbox("all"),
-            yscrollcommand=self.v_scrollbar.set
-        )
+        self.canvas.configure(yscrollcommand=self.v_scrollbar.set)
         self.v_scrollbar.pack(fill="y", side="right")
         self.canvas.pack(fill="both", expand=True)
         self.scroll = 0
         self.window.protocol("WM_DELETE_WINDOW", self.window.quit)
-        self.window.bind("<Down>", self.scrolldown)
-        self.window.bind("<Up>", self.scrollup)
-        self.window.bind("<MouseWheel>", self.mousescroll)
+        self.window.bind("<Up>", lambda e: self.scroll_canvas(delta=-1))
+        self.window.bind("<Down>", lambda e: self.scroll_canvas(delta=1))
+        self.window.bind("<MouseWheel>", lambda e: self.scroll_canvas(delta=-1 if e.delta > 0 else 1))
         self.window.bind("<Configure>", self.resize)
 
     def draw(self) -> None:
@@ -142,7 +138,6 @@ class Browser:
             if y > self.scroll + self.height: continue
             if y + VSTEP < self.scroll: continue
             self.canvas.create_text(x, y - self.scroll, text=c)
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     def load(self, url: URL) -> None:
         if url.url in cache and cache[url.url][1] > datetime.now():
@@ -156,19 +151,8 @@ class Browser:
         self.layout()
         self.draw()
 
-    def scrolldown(self, _: tkinter.Event):
-        self.scroll = min(self.scroll + SCROLL_STEP, self.canvas.winfo_height())
-        self.draw()
-
-    def scrollup(self, _: tkinter.Event):
-        self.scroll = max(self.scroll - SCROLL_STEP, 0)
-        self.draw()
-
-    def mousescroll(self, e: tkinter.Event):
-        if e.delta > 0:
-            self.scroll = max(self.scroll - e.delta, 0)
-        else:
-            self.scroll = min(self.scroll - e.delta, self.canvas.winfo_height())
+    def scroll_canvas(self, event=None, delta=0):
+        self.canvas.yview_scroll(delta, "units")
         self.draw()
 
     def resize(self, e: tkinter.Event):
@@ -191,6 +175,8 @@ class Browser:
                 cursor_x = HSTEP
             else:
                 cursor_x += HSTEP
+        self.max_y = cursor_y
+        self.canvas.configure(scrollregion=(0,0,self.width,self.max_y))
 
 
 def lex(body: str) -> str:
