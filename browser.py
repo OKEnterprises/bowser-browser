@@ -10,6 +10,10 @@ HSTEP, VSTEP = 13, 18
 MIN_WIDTH = HSTEP * 2
 SCROLL_STEP = 100
 
+EMOJIS_MAP = {
+    "😀": "emotes/1F600_color.png"
+}
+
 class URL:
     MAX_REDIRECTS = 10
 
@@ -137,6 +141,10 @@ class Browser:
         for x, y, c in self.display_list:
             if y > self.scroll + self.height: continue
             if y + VSTEP < self.scroll: continue
+            if c in EMOJIS_MAP:
+                img = tkinter.PhotoImage(file=EMOJIS_MAP[c])
+                self.canvas.create_image(img)
+                continue
             self.canvas.create_text(x, y - self.scroll, text=c)
 
     def load(self, url: URL) -> None:
