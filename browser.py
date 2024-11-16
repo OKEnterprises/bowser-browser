@@ -13,10 +13,6 @@ HSTEP, VSTEP = 13, 18
 MIN_WIDTH = HSTEP * 2
 SCROLL_STEP = 100
 
-emojis = set([
-
-])
-
 class URL:
     MAX_REDIRECTS = 10
 
@@ -68,7 +64,7 @@ class URL:
         request += f"Host: {self.host}\r\n"
         request += "Connection: keep-alive\r\n"
         request += "User-Agent: Bowser\r\n"
-        request += "Accept-Encoding: gzip, chunked\r\n"
+        request += "Accept-Encoding: gzip\r\n"
         request += "\r\n"
         s.send(request.encode("utf8"))
 
@@ -142,7 +138,6 @@ class Browser:
         self.canvas.configure(yscrollcommand=self.v_scrollbar.set)
         self.v_scrollbar.pack(fill="y", side="right")
         self.canvas.pack(fill="both", expand=True)
-        self.scroll = 0
         self.window.protocol("WM_DELETE_WINDOW", self.window.quit)
         self.window.bind("<Up>", lambda e: self.scroll_canvas(delta=-1))
         self.window.bind("<Down>", lambda e: self.scroll_canvas(delta=1))
@@ -152,10 +147,11 @@ class Browser:
     def draw(self) -> None:
         self.canvas.delete("all")
         assert self.display_list
+        scroll_top = int(self.canvas.yview()[0] * self.max_y)
         for x, y, c in self.display_list:
-            if y > self.scroll + self.height: continue
-            if y + VSTEP < self.scroll: continue
-            self.canvas.create_text(x, y - self.scroll, text=c)
+            if y < scroll_top - VSTEP: continue
+            if y > scroll_top + self.height + VSTEP: continue
+            self.canvas.create_text(x, y, text=c, anchor="nw")
 
     def load(self, url: URL) -> None:
         if url.url in cache and cache[url.url][1] > datetime.now():
@@ -182,16 +178,21 @@ class Browser:
     def layout(self):
         self.display_list: list[tuple[float, float, str]] = []
         cursor_x, cursor_y = HSTEP, VSTEP
-        effective_width = max(self.width, MIN_WIDTH)
+        effective_width = max(self.width - 2 * HSTEP, MIN_WIDTH)
         for c in self.text:
-            self.display_list.append((cursor_x, cursor_y, c))
             if c == "\n":
                 cursor_y += 1.2 * VSTEP
+                cursor_x = HSTEP
+            elif cursor_x >= effective_width - HSTEP and c == " ":
+                cursor_y += VSTEP
                 cursor_x = HSTEP
             elif cursor_x >= effective_width - HSTEP:
                 cursor_y += VSTEP
                 cursor_x = HSTEP
+                self.display_list.append((cursor_x, cursor_y, c))
+                cursor_x += HSTEP
             else:
+                self.display_list.append((cursor_x, cursor_y, c))
                 cursor_x += HSTEP
         self.max_y = cursor_y
         self.canvas.configure(scrollregion=(0,0,self.width,self.max_y))
@@ -223,6 +224,5 @@ def lex(body: str) -> str:
 
 if __name__ == "__main__":
     import sys
-
     Browser().load(URL(sys.argv[1]))
     tkinter.mainloop()
