@@ -1,7 +1,10 @@
+import gzip
 import socket
 import ssl
 import tkinter
+from collections import defaultdict
 from datetime import datetime, timedelta
+from pathlib import Path
 
 type Cache = dict[str, tuple[str, datetime]]
 cache: Cache = {}
@@ -10,9 +13,9 @@ HSTEP, VSTEP = 13, 18
 MIN_WIDTH = HSTEP * 2
 SCROLL_STEP = 100
 
-EMOJIS_MAP = {
-    "😀": "emotes/1F600_color.png"
-}
+emojis = set([
+
+])
 
 class URL:
     MAX_REDIRECTS = 10
@@ -65,22 +68,20 @@ class URL:
         request += f"Host: {self.host}\r\n"
         request += "Connection: keep-alive\r\n"
         request += "User-Agent: Bowser\r\n"
+        request += "Accept-Encoding: gzip, chunked\r\n"
         request += "\r\n"
         s.send(request.encode("utf8"))
 
-        response = s.makefile("r", encoding="utf8", newline="\r\n")
-        statusline = response.readline()
+        response = s.makefile("rb")
+        statusline = response.readline().decode("utf-8")
         version, status, explanation = statusline.split(" ", 2)
 
         response_headers = {}
         while True:
-            line = response.readline()
+            line = response.readline().decode("utf-8")
             if line == "\r\n": break
             header, value = line.split(":", 1)
             response_headers[header.casefold()] = value.strip()
-
-        assert "content-encoding" not in response_headers
-        assert "transfer-encoding" not in response_headers
 
         if int(status) in range(300, 400) and self.redirects < URL.MAX_REDIRECTS and "://" in response_headers["location"]:
             self.redirects += 1
@@ -95,7 +96,20 @@ class URL:
         else:
             self.redirects = 0
 
-        content = response.read(int(response_headers["content-length"]))
+        if response_headers.get("transfer-encoding") == "chunked":
+            content = b""
+            while True:
+                chunk_size_line = response.readline().strip()
+                chunk_size = int(chunk_size_line, 16)
+                if chunk_size == 0: break
+                chunk_data = response.read(chunk_size)
+                content += chunk_data
+                response.read(2)
+        else:
+            content = response.read(int(response_headers["content-length"]))
+
+        if response_headers.get("content-encoding") == "gzip":
+            content = gzip.decompress(content)
 
         if "cache-control" in response_headers and "no-store" not in response_headers["cache-control"]:
             exp_date = datetime.max
@@ -106,9 +120,9 @@ class URL:
                     max_age = int(directive.split("=", 1)[1])
                     exp_date = datetime.now() + timedelta(seconds=max_age) - timedelta(seconds=int(response_headers["age"]))
                     break
-            cache[self.url] = (content, exp_date)
+            cache[self.url] = (str(content), exp_date)
 
-        return content
+        return content.decode("utf-8")
 
 class Browser:
     def __init__(self, width=800, height=600):
@@ -141,10 +155,6 @@ class Browser:
         for x, y, c in self.display_list:
             if y > self.scroll + self.height: continue
             if y + VSTEP < self.scroll: continue
-            if c in EMOJIS_MAP:
-                img = tkinter.PhotoImage(file=EMOJIS_MAP[c])
-                self.canvas.create_image(img)
-                continue
             self.canvas.create_text(x, y - self.scroll, text=c)
 
     def load(self, url: URL) -> None:
@@ -211,9 +221,8 @@ def lex(body: str) -> str:
             i += 1
     return text
 
-
-
 if __name__ == "__main__":
     import sys
+
     Browser().load(URL(sys.argv[1]))
     tkinter.mainloop()
