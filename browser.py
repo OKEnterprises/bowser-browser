@@ -5,6 +5,7 @@ import tkinter
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
+from tkinter import font as tk_font
 
 type Cache = dict[str, tuple[str, datetime]]
 cache: Cache = {}
@@ -23,7 +24,8 @@ class URL:
             self.scheme, url = url.split(":", 1)
         else:
             self.scheme, url = url.split("://", 1)
-        assert self.scheme in ["http", "https", "file", "data", "view-source", "about"]
+        if self.scheme not in ["http", "https", "file", "data", "view-source", "about"]:
+            self.scheme, self.url = "about", "blank"
 
         if self.scheme == "http":
             self.port = 80
@@ -31,6 +33,9 @@ class URL:
             self.port = 443
         elif self.scheme == "data":
             self.media_type, self.data = url.split(",", 1)
+            return
+        elif self.scheme == "about":
+            self.data = ""
             return
 
         if "/" not in url:
@@ -46,7 +51,7 @@ class URL:
     def request(self) -> str:
         if self.scheme == "file":
             return open(self.path).read()
-        if self.scheme == "data":
+        if self.scheme == "data" or self.scheme == "about":
             return self.data
 
         s = socket.socket(
@@ -146,7 +151,6 @@ class Browser:
 
     def draw(self) -> None:
         self.canvas.delete("all")
-        assert self.display_list
         scroll_top = int(self.canvas.yview()[0] * self.max_y)
         for x, y, c in self.display_list:
             if y < scroll_top - VSTEP: continue
@@ -176,24 +180,17 @@ class Browser:
         self.draw()
 
     def layout(self):
+        font = tk_font.Font()
         self.display_list: list[tuple[float, float, str]] = []
         cursor_x, cursor_y = HSTEP, VSTEP
         effective_width = max(self.width - 2 * HSTEP, MIN_WIDTH)
-        for c in self.text:
-            if c == "\n":
-                cursor_y += 1.2 * VSTEP
+        for word in self.text.split():
+            w = font.measure(word)
+            if cursor_x + w >= effective_width - HSTEP:
+                cursor_y += font.metrics("linespace") * 1.25
                 cursor_x = HSTEP
-            elif cursor_x >= effective_width - HSTEP and c == " ":
-                cursor_y += VSTEP
-                cursor_x = HSTEP
-            elif cursor_x >= effective_width - HSTEP:
-                cursor_y += VSTEP
-                cursor_x = HSTEP
-                self.display_list.append((cursor_x, cursor_y, c))
-                cursor_x += HSTEP
-            else:
-                self.display_list.append((cursor_x, cursor_y, c))
-                cursor_x += HSTEP
+            self.display_list.append((cursor_x, cursor_y, word))
+            cursor_x += w + font.measure(" ")
         self.max_y = cursor_y
         self.canvas.configure(scrollregion=(0,0,self.width,self.max_y))
 
